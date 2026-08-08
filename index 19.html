@@ -1,0 +1,628 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Vider Gmail</title>
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="Vider Gmail" />
+<meta name="theme-color" content="#F0F2ED" />
+<link rel="apple-touch-icon" href="icon.png" />
+<link rel="icon" href="icon.png" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<script src="https://accounts.google.com/gsi/client" async></script>
+<style>
+  :root{
+    --paper:#F0F2ED; --card:#FFFFFF; --ink:#17231F; --ink-soft:#4B5952;
+    --line:#D8D3C7; --brand:#2D6E63; --brand-dark:#1F4F47; --brand-tint:#E1EAE6;
+    --weight:#B8862B; --weight-tint:#F3E9D6;
+    --danger:#A83232; --danger-tint:#F4E4E0;
+    --radius:16px; --radius-sm:10px;
+    --font-display:"Fraunces", Georgia, serif;
+    --font-body:"Inter", -apple-system, BlinkMacSystemFont, sans-serif;
+    --font-mono:"IBM Plex Mono", ui-monospace, SFMono-Regular, monospace;
+  }
+  *{ box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html,body{ margin:0; padding:0; }
+  body{
+    background:var(--paper); color:var(--ink); font-family:var(--font-body);
+    -webkit-font-smoothing:antialiased; min-height:100vh;
+    padding-bottom:calc(96px + env(safe-area-inset-bottom));
+  }
+  .app{ max-width:560px; margin:0 auto; padding:28px 20px 20px; }
+  .hero{ padding:8px 2px 24px; }
+  .eyebrow{ font-family:var(--font-mono); font-size:12px; letter-spacing:.08em; text-transform:uppercase; color:var(--brand); margin:0 0 6px; }
+  h1{ font-family:var(--font-display); font-weight:600; font-size:34px; line-height:1.08; margin:0 0 10px; letter-spacing:-.01em; }
+  .lede{ color:var(--ink-soft); font-size:15px; line-height:1.5; margin:0; max-width:42ch; }
+
+  .gauge-card{ background:var(--card); border:1px solid var(--line); border-radius:var(--radius); padding:16px 18px; margin-bottom:16px; }
+  .gauge-label{ display:flex; justify-content:space-between; align-items:baseline; font-family:var(--font-mono); font-size:13px; margin-bottom:10px; }
+  .gauge-label strong{ color:var(--ink); font-size:15px; }
+  .gauge-label .muted{ color:var(--ink-soft); }
+  .gauge-track{ height:10px; background:var(--paper); border:1px solid var(--line); border-radius:99px; overflow:hidden; }
+  .gauge-fill{ height:100%; width:0%; background:linear-gradient(90deg, var(--brand), var(--brand-dark)); transition:width .35s ease; border-radius:99px; }
+
+  .panel{ background:var(--card); border:1px solid var(--line); border-radius:var(--radius); padding:20px; margin-bottom:16px; }
+  .panel h2{ font-family:var(--font-display); font-size:20px; margin:0 0 8px; font-weight:600; }
+  .panel p{ color:var(--ink-soft); font-size:14px; line-height:1.5; margin:0 0 4px; }
+
+  .status-banner{ border-radius:var(--radius-sm); padding:12px 14px; margin-bottom:16px; font-size:14px; line-height:1.4; }
+  .status-banner.error{ background:var(--danger-tint); color:var(--danger); border:1px solid #E3B8AE; }
+  .status-banner.info{ background:var(--brand-tint); color:var(--brand-dark); border:1px solid #BFD6CE; }
+
+  .field{ display:block; margin-bottom:16px; }
+  .field span{ display:block; font-size:13px; font-weight:600; margin-bottom:6px; color:var(--ink); }
+  .field input[type=email], .field input[type=number]{
+    width:100%; font-size:16px; font-family:var(--font-body); padding:12px 14px;
+    border:1px solid var(--line); border-radius:var(--radius-sm); background:var(--paper); color:var(--ink);
+  }
+  .field input:focus{ outline:2px solid var(--brand); outline-offset:1px; }
+
+  .toggle-field{ display:flex; align-items:flex-start; gap:12px; margin-bottom:18px; cursor:pointer; }
+  .toggle-field input{ margin-top:3px; width:20px; height:20px; accent-color:var(--danger); flex:none; }
+  .toggle-field strong{ display:block; font-size:14px; }
+  .toggle-field small{ display:block; color:var(--ink-soft); font-size:12.5px; line-height:1.4; margin-top:2px; }
+
+  .btn{ appearance:none; border:none; border-radius:var(--radius-sm); font-family:var(--font-body); font-weight:600; font-size:15px; padding:14px 20px; cursor:pointer; }
+  .btn:disabled{ opacity:.5; cursor:default; }
+  .btn-block{ width:100%; }
+  .btn-primary{ background:var(--brand); color:#fff; }
+  .btn-primary:active:not(:disabled){ background:var(--brand-dark); }
+  .btn-primary.danger{ background:var(--danger); }
+  .btn-secondary{ background:var(--paper); color:var(--ink); border:1px solid var(--line); }
+  .btn-link{ background:none; border:none; color:var(--brand-dark); font-family:var(--font-body); font-size:13px; font-weight:600; padding:6px 0; cursor:pointer; }
+  .hint{ font-size:12.5px; color:var(--ink-soft); margin-top:10px; }
+
+  .results-header{ display:flex; justify-content:space-between; margin-bottom:8px; }
+  .results-list{ list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:10px; }
+  .result-item{ display:flex; gap:12px; align-items:flex-start; border:1px solid var(--line); border-radius:var(--radius-sm); padding:12px; background:var(--paper); }
+  .result-item input{ margin-top:3px; width:20px; height:20px; accent-color:var(--brand); flex:none; }
+  .result-main{ min-width:0; flex:1; }
+  .result-subject{ font-size:14px; font-weight:600; margin:0 0 2px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .result-from{ font-size:12.5px; color:var(--ink-soft); margin:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .result-size{ font-family:var(--font-mono); font-size:13px; font-weight:600; color:var(--weight); background:var(--weight-tint); padding:3px 8px; border-radius:99px; flex:none; white-space:nowrap; }
+
+  .progress-line{ font-family:var(--font-mono); font-size:13px; color:var(--ink-soft); margin:4px 0; }
+
+  .action-bar{
+    position:fixed; left:0; right:0; bottom:0; background:var(--card); border-top:1px solid var(--line);
+    padding:12px 20px calc(12px + env(safe-area-inset-bottom)); display:flex; align-items:center; justify-content:space-between; gap:16px;
+  }
+  .action-bar-info{ font-size:13px; color:var(--ink-soft); }
+  .action-bar-info strong{ color:var(--ink); font-family:var(--font-mono); font-size:15px; }
+
+  [hidden]{ display:none !important; }
+  a{ color:var(--brand-dark); }
+</style>
+</head>
+<body>
+  <div class="app">
+    <header class="hero">
+      <p class="eyebrow">Boîte Gmail</p>
+      <h1>Vider le stockage</h1>
+      <p class="lede">Repère les emails les plus lourds, archive-les vers une autre adresse, libère la place.</p>
+    </header>
+
+    <section class="gauge-card" id="gaugeCard" hidden>
+      <div class="gauge-label">
+        <strong id="gaugeSelectedText">0 Mo</strong>
+        <span class="muted" id="gaugeTotalText">sélectionnés sur 0 Mo trouvés</span>
+      </div>
+      <div class="gauge-track"><div class="gauge-fill" id="gaugeFill"></div></div>
+    </section>
+
+    <div id="statusBanner" class="status-banner" hidden></div>
+
+    <section id="configPanel" class="panel" hidden>
+      <h2>Configuration</h2>
+      <p>À faire une seule fois : colle le Client ID OAuth "Web application" créé dans Google Cloud Console (voir SETUP.md pour l'obtenir). Il reste mémorisé sur cet appareil.</p>
+      <label class="field">
+        <span>Client ID Google</span>
+        <input type="text" id="clientIdInput" placeholder="xxxxxxxx.apps.googleusercontent.com" autocapitalize="off" autocorrect="off" spellcheck="false" />
+      </label>
+      <button id="saveClientIdBtn" class="btn btn-primary btn-block">Continuer</button>
+    </section>
+
+    <section id="connectPanel" class="panel" hidden>
+      <h2>Connexion</h2>
+      <p>Connecte-toi avec le compte Google dont tu veux libérer le stockage.</p>
+      <label class="field">
+        <span>Adresse Gmail à nettoyer (optionnel)</span>
+        <input type="email" id="accountHintInput" placeholder="toi@gmail.com" inputmode="email" autocomplete="email" />
+      </label>
+      <button id="connectBtn" class="btn btn-primary btn-block" disabled>Chargement…</button>
+      <p class="hint">Utile si plusieurs comptes Google sont connectés sur cet appareil : évite de se tromper de compte.</p>
+      <p class="hint"><button id="editClientIdBtn" class="btn-link" style="padding:0">Changer le Client ID</button></p>
+    </section>
+
+    <section id="controlsPanel" class="panel" hidden>
+      <h2>Recherche</h2>
+      <label class="field">
+        <span>Transférer les emails trouvés vers</span>
+        <input type="email" id="forwardToInput" placeholder="archive@exemple.com" inputmode="email" autocomplete="email" />
+      </label>
+      <label class="field">
+        <span>Taille minimale (Mo)</span>
+        <input type="number" id="minSizeInput" value="10" min="1" step="1" inputmode="numeric" />
+      </label>
+      <label class="toggle-field" for="permanentDeleteToggle">
+        <input type="checkbox" id="permanentDeleteToggle" />
+        <span>
+          <strong>Suppression définitive</strong>
+          <small>Sinon : mise à la corbeille (récupérable 30 jours). La corbeille compte encore dans le stockage tant qu'elle n'est pas vidée.</small>
+        </span>
+      </label>
+      <button id="scanBtn" class="btn btn-primary btn-block">Rechercher les emails volumineux</button>
+      <p class="hint">Jusqu'à 50 résultats par recherche, triés par pertinence Gmail. Relance une recherche après traitement pour voir les suivants.</p>
+    </section>
+
+    <section id="loadingPanel" class="panel" hidden>
+      <h2 id="loadingTitle">Recherche en cours…</h2>
+      <p class="progress-line" id="loadingProgress"></p>
+    </section>
+
+    <section id="emptyPanel" class="panel" hidden>
+      <h2>Rien à nettoyer ici</h2>
+      <p id="emptyText"></p>
+      <div style="height:8px"></div>
+      <button id="emptyBackBtn" class="btn btn-secondary btn-block">Modifier la recherche</button>
+    </section>
+
+    <section id="resultsPanel" class="panel" hidden>
+      <div class="results-header">
+        <span class="hint" style="margin:0" id="resultsCountText"></span>
+        <span>
+          <button id="selectAllBtn" class="btn-link">Tout cocher</button>
+          <button id="selectNoneBtn" class="btn-link">Tout décocher</button>
+        </span>
+      </div>
+      <ul class="results-list" id="resultsList"></ul>
+    </section>
+
+    <section id="processingPanel" class="panel" hidden>
+      <h2>Traitement en cours…</h2>
+      <p class="progress-line" id="processingProgress"></p>
+      <p class="hint">Ne ferme pas cet onglet pendant le traitement.</p>
+    </section>
+
+    <section id="donePanel" class="panel" hidden>
+      <h2 id="doneTitle"></h2>
+      <p id="doneDetail"></p>
+      <div style="height:8px"></div>
+      <button id="restartBtn" class="btn btn-secondary btn-block">Nouvelle recherche</button>
+    </section>
+  </div>
+
+  <div id="actionBar" class="action-bar" hidden>
+    <div class="action-bar-info"><strong id="actionBarCount">0</strong> sélectionné(s)</div>
+    <button id="processBtn" class="btn btn-primary">Transférer et supprimer</button>
+  </div>
+
+<script>
+"use strict";
+
+// ============ CONFIGURATION ============
+// Le Client ID Google (OAuth "Web application") est saisi une fois dans l'app
+// elle-meme (ecran de configuration) et memorise sur cet appareil/navigateur —
+// pas besoin d'editer ce fichier. Voir SETUP.md pour l'obtenir.
+const SCOPE_SAFE = "https://www.googleapis.com/auth/gmail.modify https://www.googleapis.com/auth/gmail.send";
+const SCOPE_FULL = "https://mail.google.com/";
+const MAX_RESULTS = 50;
+const PROCESS_DELAY_MS = 400;
+const CLIENT_ID_STORAGE_KEY = "gmailCleanupClientId";
+
+function loadStoredClientId() {
+  try { return localStorage.getItem(CLIENT_ID_STORAGE_KEY) || ""; } catch (_) { return ""; }
+}
+function saveStoredClientId(value) {
+  try { localStorage.setItem(CLIENT_ID_STORAGE_KEY, value); } catch (_) { /* stockage indisponible : re-saisie au prochain lancement */ }
+}
+const ACCOUNT_HINT_STORAGE_KEY = "gmailCleanupAccountHint";
+function loadStoredAccountHint() {
+  try { return localStorage.getItem(ACCOUNT_HINT_STORAGE_KEY) || ""; } catch (_) { return ""; }
+}
+function saveStoredAccountHint(value) {
+  try { localStorage.setItem(ACCOUNT_HINT_STORAGE_KEY, value); } catch (_) {}
+}
+
+// ============ ETAT ============
+const state = {
+  clientId: loadStoredClientId(),
+  accountHint: loadStoredAccountHint(),
+  accessToken: null,
+  scope: null,
+  messages: [],       // {id, subject, from, size, selected}
+  forwardTo: "",
+  minSizeMb: 10,
+  permanentDelete: false,
+};
+
+// ============ UTILITAIRES MIME (valides par tests avant integration) ============
+function base64UrlToBytes(b64url) {
+  const b64 = b64url.replace(/-/g, "+").replace(/_/g, "/");
+  const padded = b64 + "=".repeat((4 - (b64.length % 4)) % 4);
+  const binary = atob(padded);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return bytes;
+}
+function bytesToBase64Url(bytes) {
+  let binary = "";
+  for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+  const b64 = btoa(binary);
+  return b64.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+function findHeaderBoundary(bytes) {
+  for (let i = 0; i < bytes.length - 3; i++) {
+    if (bytes[i] === 13 && bytes[i+1] === 10 && bytes[i+2] === 13 && bytes[i+3] === 10) return i + 4;
+  }
+  for (let i = 0; i < bytes.length - 1; i++) {
+    if (bytes[i] === 10 && bytes[i+1] === 10) return i + 2;
+  }
+  return -1;
+}
+function parseHeaderLines(headerText) {
+  const rawLines = headerText.split(/\r\n|\n/);
+  const lines = [];
+  for (const line of rawLines) {
+    if (line === "") continue;
+    if ((line.startsWith(" ") || line.startsWith("\t")) && lines.length > 0) {
+      lines[lines.length - 1] += "\r\n" + line;
+    } else {
+      lines.push(line);
+    }
+  }
+  return lines;
+}
+function rewriteRawMessage(rawBytes, forwardTo) {
+  const boundary = findHeaderBoundary(rawBytes);
+  if (boundary === -1) throw new Error("Format de message invalide : en-tetes introuvables");
+  const headerBytes = rawBytes.slice(0, boundary);
+  const rest = rawBytes.slice(boundary); // corps seul
+  const headerText = new TextDecoder("utf-8").decode(headerBytes);
+  const lines = parseHeaderLines(headerText);
+
+  let subjectValue = null;
+  const kept = [];
+  for (const line of lines) {
+    const m = line.match(/^([^:]+):\s?([\s\S]*)$/);
+    const name = m ? m[1].toLowerCase() : "";
+    if (name === "to" || name === "cc" || name === "bcc" || name === "delivered-to") continue;
+    if (name === "subject") { subjectValue = m[2]; continue; }
+    kept.push(line);
+  }
+  const finalSubject = subjectValue === null ? "(sans objet)" : subjectValue;
+  const prefixed = /^fwd:/i.test(finalSubject.trim()) ? finalSubject : "Fwd: " + finalSubject;
+  kept.push("To: " + forwardTo);
+  kept.push("Subject: " + prefixed);
+
+  const newHeaderText = kept.join("\r\n") + "\r\n\r\n";
+  const newHeaderBytes = new TextEncoder().encode(newHeaderText);
+  const result = new Uint8Array(newHeaderBytes.length + rest.length);
+  result.set(newHeaderBytes, 0);
+  result.set(rest, newHeaderBytes.length);
+  return result;
+}
+
+// ============ AUTH (Google Identity Services, modele "token") ============
+function requestToken(scope) {
+  return new Promise((resolve, reject) => {
+    if (!state.clientId) {
+      reject(new Error("Client ID Google manquant."));
+      return;
+    }
+    if (!window.google || !google.accounts || !google.accounts.oauth2) {
+      reject(new Error("Google Identity Services n'est pas encore chargé. Réessaie dans un instant."));
+      return;
+    }
+    const config = {
+      client_id: state.clientId,
+      scope,
+      callback: (resp) => {
+        if (resp.error) reject(resp);
+        else resolve(resp);
+      },
+    };
+    if (state.accountHint) config.login_hint = state.accountHint;
+    const client = google.accounts.oauth2.initTokenClient(config);
+    client.requestAccessToken();
+  });
+}
+async function ensureAuthForCurrentMode() {
+  const needed = state.permanentDelete ? SCOPE_FULL : SCOPE_SAFE;
+  if (state.accessToken && state.scope === needed) return;
+  const resp = await requestToken(needed);
+  state.accessToken = resp.access_token;
+  state.scope = needed;
+}
+
+// ============ API GMAIL ============
+async function gmailFetch(path, options = {}) {
+  const res = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me${path}`, {
+    ...options,
+    headers: { ...(options.headers || {}), Authorization: `Bearer ${state.accessToken}` },
+  });
+  if (!res.ok) {
+    let detail = "";
+    try { detail = (await res.json()).error?.message || ""; } catch (_) {}
+    throw new Error(`Gmail API ${res.status}${detail ? " — " + detail : ""}`);
+  }
+  if (res.status === 204) return null;
+  return res.json();
+}
+async function findLargeMessages(minSizeMb, maxResults) {
+  const sizeBytes = Math.round(minSizeMb * 1024 * 1024);
+  const q = `larger:${sizeBytes} -in:trash -in:spam`;
+  let found = [];
+  let pageToken;
+  while (found.length < maxResults) {
+    const params = new URLSearchParams({ q, maxResults: String(Math.min(500, maxResults - found.length)) });
+    if (pageToken) params.set("pageToken", pageToken);
+    const resp = await gmailFetch(`/messages?${params.toString()}`);
+    found = found.concat(resp.messages || []);
+    pageToken = resp.nextPageToken;
+    if (!pageToken) break;
+  }
+  return found.slice(0, maxResults);
+}
+async function getMetadata(id) {
+  const params = new URLSearchParams({ format: "metadata" });
+  params.append("metadataHeaders", "Subject");
+  params.append("metadataHeaders", "From");
+  return gmailFetch(`/messages/${id}?${params.toString()}`);
+}
+async function forwardMessage(id, forwardTo) {
+  const raw = await gmailFetch(`/messages/${id}?format=raw`);
+  const bytes = base64UrlToBytes(raw.raw);
+  const rewritten = rewriteRawMessage(bytes, forwardTo);
+  const encoded = bytesToBase64Url(rewritten);
+  return gmailFetch(`/messages/send`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ raw: encoded }),
+  });
+}
+function trashMessage(id) { return gmailFetch(`/messages/${id}/trash`, { method: "POST" }); }
+function deleteMessagePermanently(id) { return gmailFetch(`/messages/${id}`, { method: "DELETE" }); }
+
+// ============ HELPERS UI ============
+const $ = (id) => document.getElementById(id);
+function humanSize(n) {
+  let v = n;
+  for (const unit of ["o", "Ko", "Mo", "Go"]) {
+    if (v < 1024) return `${v.toFixed(1)} ${unit}`;
+    v /= 1024;
+  }
+  return `${v.toFixed(1)} To`;
+}
+function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
+function showPanel(id) {
+  for (const p of ["configPanel","connectPanel","controlsPanel","loadingPanel","emptyPanel","resultsPanel","processingPanel","donePanel"]) {
+    $(p).hidden = p !== id;
+  }
+}
+function showStatus(message, type) {
+  const el = $("statusBanner");
+  if (!message) { el.hidden = true; return; }
+  el.hidden = false;
+  el.className = "status-banner " + (type || "info");
+  el.textContent = message;
+}
+function updateGauge() {
+  const selected = state.messages.filter((m) => m.selected);
+  const selectedSize = selected.reduce((s, m) => s + m.size, 0);
+  const totalSize = state.messages.reduce((s, m) => s + m.size, 0);
+  $("gaugeCard").hidden = state.messages.length === 0;
+  $("gaugeSelectedText").textContent = humanSize(selectedSize);
+  $("gaugeTotalText").textContent = `sélectionnés sur ${humanSize(totalSize)} trouvés`;
+  $("gaugeFill").style.width = totalSize > 0 ? `${(selectedSize / totalSize) * 100}%` : "0%";
+  const count = selected.length;
+  $("actionBar").hidden = count === 0;
+  $("actionBarCount").textContent = String(count);
+}
+function renderResults() {
+  const list = $("resultsList");
+  list.innerHTML = "";
+  for (const m of state.messages) {
+    const li = document.createElement("li");
+    li.className = "result-item";
+    li.innerHTML = `
+      <input type="checkbox" ${m.selected ? "checked" : ""} data-id="${m.id}" />
+      <div class="result-main">
+        <p class="result-subject"></p>
+        <p class="result-from"></p>
+      </div>
+      <span class="result-size">${humanSize(m.size)}</span>
+    `;
+    li.querySelector(".result-subject").textContent = m.subject;
+    li.querySelector(".result-from").textContent = m.from;
+    li.querySelector("input").addEventListener("change", (e) => {
+      m.selected = e.target.checked;
+      updateGauge();
+    });
+    list.appendChild(li);
+  }
+  $("resultsCountText").textContent = `${state.messages.length} email(s) trouvé(s)`;
+}
+
+// ============ FLUX PRINCIPAL ============
+async function onConnect() {
+  showStatus("", null);
+  $("connectBtn").disabled = true;
+  $("connectBtn").textContent = "Connexion…";
+  try {
+    await ensureAuthForCurrentMode();
+    showPanel("controlsPanel");
+  } catch (err) {
+    showStatus("Connexion annulée ou impossible : " + (err.message || err.error || "erreur inconnue"), "error");
+  } finally {
+    $("connectBtn").disabled = false;
+    $("connectBtn").textContent = "Se connecter avec Google";
+  }
+}
+
+async function onScan() {
+  const forwardTo = $("forwardToInput").value.trim();
+  const minSizeMb = parseFloat($("minSizeInput").value) || 10;
+  if (!forwardTo.includes("@")) {
+    showStatus("Renseigne une adresse email de destination valide.", "error");
+    return;
+  }
+  state.forwardTo = forwardTo;
+  state.minSizeMb = minSizeMb;
+  showStatus("", null);
+
+  showPanel("loadingPanel");
+  $("loadingTitle").textContent = "Recherche en cours…";
+  $("loadingProgress").textContent = "";
+
+  try {
+    await ensureAuthForCurrentMode();
+    const found = await findLargeMessages(minSizeMb, MAX_RESULTS);
+    if (found.length === 0) {
+      $("emptyText").textContent = `Aucun email de plus de ${minSizeMb} Mo trouvé (hors corbeille et spam). Essaie un seuil plus bas.`;
+      showPanel("emptyPanel");
+      return;
+    }
+
+    const details = [];
+    for (let i = 0; i < found.length; i++) {
+      $("loadingProgress").textContent = `${i + 1} / ${found.length}`;
+      try {
+        const meta = await getMetadata(found[i].id);
+        const headers = {};
+        for (const h of meta.payload.headers) headers[h.name] = h.value;
+        details.push({
+          id: found[i].id,
+          subject: headers.Subject || "(sans objet)",
+          from: headers.From || "?",
+          size: meta.sizeEstimate || 0,
+          selected: true,
+        });
+      } catch (e) {
+        // ignore un message illisible individuellement, continue les autres
+      }
+    }
+    details.sort((a, b) => b.size - a.size);
+    state.messages = details;
+    renderResults();
+    updateGauge();
+    showPanel("resultsPanel");
+  } catch (err) {
+    showStatus("Erreur pendant la recherche : " + (err.message || "inconnue"), "error");
+    showPanel("controlsPanel");
+  }
+}
+
+async function onProcess() {
+  const selected = state.messages.filter((m) => m.selected);
+  if (selected.length === 0) return;
+
+  if (state.permanentDelete) {
+    const ok = confirm(
+      `Suppression DÉFINITIVE et IRRÉVERSIBLE de ${selected.length} email(s), après transfert vers ${state.forwardTo}.\n\nContinuer ?`
+    );
+    if (!ok) return;
+  }
+
+  showPanel("processingPanel");
+  $("actionBar").hidden = true;
+
+  try {
+    await ensureAuthForCurrentMode();
+  } catch (err) {
+    showStatus("Reconnexion nécessaire : " + (err.message || "erreur"), "error");
+    showPanel("resultsPanel");
+    updateGauge();
+    return;
+  }
+
+  let ok = 0, errors = 0;
+  for (let i = 0; i < selected.length; i++) {
+    const m = selected[i];
+    $("processingProgress").textContent = `${i + 1} / ${selected.length} — ${m.subject.slice(0, 40)}`;
+    try {
+      await forwardMessage(m.id, state.forwardTo);
+      if (state.permanentDelete) await deleteMessagePermanently(m.id);
+      else await trashMessage(m.id);
+      ok++;
+      await sleep(PROCESS_DELAY_MS);
+    } catch (e) {
+      errors++;
+    }
+  }
+
+  $("doneTitle").textContent = errors === 0 ? "Terminé" : "Terminé avec erreurs";
+  let detail = `${ok} email(s) traité(s)`;
+  if (errors > 0) detail += `, ${errors} erreur(s)`;
+  detail += ".";
+  if (!state.permanentDelete && ok > 0) {
+    detail += " Les emails sont dans la Corbeille : l'espace ne sera libéré qu'après suppression définitive (automatique après 30 jours, ou vidage manuel de la Corbeille dans Gmail).";
+  }
+  $("doneDetail").textContent = detail;
+  state.messages = [];
+  updateGauge();
+  showPanel("donePanel");
+}
+
+// ============ INITIALISATION ============
+function waitForGis() {
+  const check = () => {
+    if (window.google && google.accounts && google.accounts.oauth2) {
+      $("connectBtn").disabled = false;
+      $("connectBtn").textContent = "Se connecter avec Google";
+    } else {
+      setTimeout(check, 200);
+    }
+  };
+  check();
+}
+
+$("saveClientIdBtn").addEventListener("click", () => {
+  const value = $("clientIdInput").value.trim();
+  if (!value) {
+    showStatus("Colle un Client ID avant de continuer.", "error");
+    return;
+  }
+  if (value !== state.clientId) {
+    state.accessToken = null;
+    state.scope = null;
+  }
+  state.clientId = value;
+  saveStoredClientId(value);
+  showStatus("", null);
+  showPanel("connectPanel");
+});
+$("editClientIdBtn").addEventListener("click", () => {
+  $("clientIdInput").value = state.clientId || "";
+  showPanel("configPanel");
+});
+$("accountHintInput").addEventListener("change", (e) => {
+  state.accountHint = e.target.value.trim();
+  saveStoredAccountHint(state.accountHint);
+});
+$("connectBtn").addEventListener("click", onConnect);
+$("scanBtn").addEventListener("click", onScan);
+$("emptyBackBtn").addEventListener("click", () => showPanel("controlsPanel"));
+$("restartBtn").addEventListener("click", () => showPanel("controlsPanel"));
+$("processBtn").addEventListener("click", onProcess);
+$("selectAllBtn").addEventListener("click", () => { state.messages.forEach((m) => (m.selected = true)); renderResults(); updateGauge(); });
+$("selectNoneBtn").addEventListener("click", () => { state.messages.forEach((m) => (m.selected = false)); renderResults(); updateGauge(); });
+$("permanentDeleteToggle").addEventListener("change", (e) => {
+  state.permanentDelete = e.target.checked;
+  if (state.accessToken) {
+    // le scope precedent ne correspond plus forcement au mode choisi ; on force une nouvelle demande au prochain besoin
+    state.accessToken = null;
+    state.scope = null;
+  }
+});
+
+waitForGis();
+$("accountHintInput").value = state.accountHint;
+showPanel(state.clientId ? "connectPanel" : "configPanel");
+</script>
+</body>
+</html>
