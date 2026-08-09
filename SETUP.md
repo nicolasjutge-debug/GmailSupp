@@ -1,8 +1,14 @@
-# Vider Gmail — version web (iOS / Safari)
+# Vider Gmail & Drive — version web (iOS / Safari)
 
-Version web du nettoyage de stockage Gmail, pensée pour Safari sur iPhone (ajoutable à l'écran d'accueil comme une app). Tout tourne dans le navigateur : pas d'installation, pas de fichier de connexion à gérer comme avec la version Python.
+Version web du nettoyage de stockage Google, pensée pour Safari sur iPhone (ajoutable à l'écran d'accueil comme une app). Tout tourne dans le navigateur : pas d'installation, pas de fichier de connexion à gérer comme avec la version Python.
 
-Deux fichiers, `index.html` et `icon.png` (icône pour l'écran d'accueil) — à héberger ensemble, dans le même dossier. Mêmes fonctionnalités que la version Python : recherche par taille, transfert vers une autre adresse, corbeille ou suppression définitive — avec sélection des emails et une jauge d'espace.
+Cinq fichiers à héberger ensemble, dans le même dossier : `index.html`, `icon.png`, `icon-192.png`, `icon-512.png` et `manifest.json` (installation PC). Un sélecteur en haut de l'écran de connexion bascule entre **Gmail** et **Drive** : recherche par taille, corbeille ou suppression définitive, sélection des éléments et jauge d'espace, dans les deux cas.
+
+**Installation** : sur PC (Chrome/Edge), un bandeau avec bouton "Installer" apparaît automatiquement quand le navigateur détecte que l'app est installable (aucune manip manuelle). Sur iPhone, Safari ne permet pas ce bouton automatique — le bandeau affiche donc l'instruction (Partager → Sur l'écran d'accueil) à la place. L'app détecte laquelle des deux capacités est disponible, elle ne devine pas via le nom du navigateur.
+
+**Différence entre les deux modes :** un email peut être transféré sans rien demander au destinataire ; un fichier Drive, non — changer son propriétaire nécessite que l'autre compte accepte explicitement, ce n'est pas automatisable. Le mode Drive **télécharge donc le fichier sur l'appareil** avant suppression, au lieu de l'envoyer à une autre adresse.
+
+**Google Photos n'est pas proposé.** Depuis mars 2025, une app tierce ne peut accéder qu'aux photos qu'elle a elle-même envoyées à Google Photos, pas à la bibliothèque existante de l'utilisateur — et l'API n'a jamais permis de supprimer des photos, même avant cette restriction. Il n'existe aucune combinaison de permissions qui rendrait cette fonction possible actuellement.
 
 ## Configuration (à faire une seule fois)
 
@@ -10,16 +16,18 @@ Deux fichiers, `index.html` et `icon.png` (icône pour l'écran d'accueil) — �
 
 Cette version a besoin de son propre identifiant Google, différent de celui de la version Python (qui était de type "Desktop app"). Le même projet Google Cloud peut être réutilisé si l'étape a déjà été faite pour le script Python.
 
-1. [console.cloud.google.com](https://console.cloud.google.com/) → ouvrir le projet (ou en créer un) ; l'API Gmail doit être activée (**APIs & Services > Library** → "Gmail API" → **Enable**).
+1. [console.cloud.google.com](https://console.cloud.google.com/) → ouvrir le projet (ou en créer un) ; activer les APIs nécessaires (**APIs & Services > Library**) : chercher et **Enable** pour "Gmail API", et de même pour "Google Drive API" si le mode Drive doit être utilisé.
 2. L'écran de config OAuth s'appelle maintenant **Google Auth Platform**, en 4 sections (menu **APIs & Services > OAuth consent screen**, ou taper "OAuth" dans la barre de recherche en haut) :
    - **Audience** : vérifier que l'adresse Gmail concernée est dans **Test users**
-   - **Data Access** : ajouter les scopes `.../auth/gmail.modify` et `.../auth/gmail.send` (ajouter aussi `https://mail.google.com/` pour la suppression définitive)
+   - **Data Access** : ajouter les scopes `.../auth/gmail.modify` et `.../auth/gmail.send` (ajouter aussi `https://mail.google.com/` pour la suppression définitive Gmail) ; pour Drive, ajouter `.../auth/drive`
 3. Onglet **Clients > Create Client** :
    - Type d'application : **Web application**
    - Dans **Authorized JavaScript origins**, ajouter l'URL exacte où le fichier sera hébergé (ex. `https://simon.jutge.free.fr` ou `https://pseudo.github.io`), sans slash final
    - Laisser **Authorized redirect URIs** vide — pas utilisé par cette app
    - Créer : une fenêtre affiche deux valeurs, **copier uniquement le Client ID** (se termine par `.apps.googleusercontent.com`), pas le Client Secret (`GOCSPX-...`, inutile ici et à ne jamais partager)
    - Pour retrouver le Client ID plus tard : onglet **Clients** → cliquer sur le nom du client → il est affiché en haut de la page
+
+Le même Client ID sert pour Gmail et Drive — pas besoin d'en créer un second.
 
 ### 2. Héberger les fichiers
 
@@ -55,12 +63,29 @@ Au premier clic sur "Se connecter avec Google", un écran d'avertissement "appli
 
 L'app tourne bien, mais Google refuse la connexion : l'origine de la page n'est pas dans la liste autorisée du Client ID. Sur l'écran de Configuration de l'app, copier la valeur affichée sous "Origine de cette page" et l'ajouter (ou la corriger) dans **Authorized JavaScript origins** sur Google Cloud Console → **Clients** → cliquer sur le client → **Save**. Un changement peut prendre quelques minutes à se propager.
 
+### Erreur 403 "API has not been used in project ... or it is disabled"
+
+Différent des erreurs ci-dessus : ici la connexion Google a réussi, mais l'API elle-même (Gmail ou Drive selon le mode utilisé) n'est pas activée sur le projet Google Cloud. Le message d'erreur contient un lien direct vers la bonne page pour l'activer (**Enable**) — vérifier aussi qu'il s'agit bien du **même projet** que celui où le Client ID a été créé, en cas de doute sur le numéro de projet affiché dans l'erreur.
+
+### La page se ferme / revient en arrière pendant un traitement volumineux
+
+Cause probable : mémoire saturée. Transférer un email ou télécharger un fichier Drive passe par la mémoire du navigateur (pas de flux direct vers le disque, limitation de Safari) — un lot de plusieurs centaines de Mo peut dépasser ce que Safari autorise sur mobile, et la page se recharge ou revient en arrière sans message d'erreur explicite. L'app affiche maintenant un avertissement (jauge + confirmation) au-delà de 300 Mo sélectionnés ; en cas de blocage malgré tout, décocher une partie de la sélection et traiter par groupes plus petits.
+
+### Un élément traité réapparaît dans une recherche suivante
+
+Deux causes possibles, toutes deux inoffensives pour les données d'origine (rien n'est perdu) :
+- **Échec partiel** : le transfert/téléchargement a réussi mais la suppression a échoué ensuite (API, réseau). L'app retente automatiquement une fois avant d'abandonner, et l'écran final signale distinctement ce cas ("transféré mais pas supprimé") plutôt que de le compter comme une simple erreur générique.
+- **Délai d'indexation Gmail** : après une mise à la corbeille, l'index de recherche Gmail peut mettre quelques instants à se mettre à jour ; une recherche relancée immédiatement peut encore montrer l'élément brièvement.
+
 ## Différences avec la version Python
 
 - Pas de `credentials.json` ni de jeton à gérer : la connexion se refait à chaque session (jeton valable ~1h). Adapté à un usage ponctuel plutôt qu'à une automatisation en arrière-plan.
 - Recherche limitée à 50 résultats par lancement ; relancer une recherche après traitement pour voir les suivants.
-- Mêmes règles de sécurité : corbeille par défaut (espace libéré seulement après vidage, automatique à 30 jours ou manuel), suppression définitive optionnelle et irréversible (confirmation demandée avant d'agir).
+- Mêmes règles de sécurité : corbeille par défaut (espace libéré seulement après vidage, automatique à 30 jours ou manuel, identique sur Gmail et Drive), suppression définitive optionnelle et irréversible (confirmation demandée avant d'agir).
+- La version Python ne couvre que Gmail ; le mode Drive n'existe que dans cette version web.
 
 ## Sécurité
 
 Le Client ID n'est pas un secret : personne ne peut l'utiliser pour accéder au compte sans passer par sa propre connexion Google. Il est stocké dans le stockage local du navigateur sur l'appareil utilisé — normal et sans risque pour un usage personnel.
+
+Le scope Drive utilisé (`.../auth/drive`) donne un accès complet au Drive, nécessaire pour retrouver et supprimer n'importe quel fichier volumineux existant (un accès limité aux seuls fichiers créés par l'app, plus restreint, ne permettrait pas de voir les fichiers déjà présents). Comme pour la suppression définitive Gmail, Google affiche l'écran "application non validée" à la connexion — sans risque pour un usage personnel avec son propre compte en Test user.

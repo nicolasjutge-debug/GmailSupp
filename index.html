@@ -3,13 +3,14 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-<title>Vider Gmail</title>
+<title>Vider le stockage Google</title>
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-<meta name="apple-mobile-web-app-title" content="Vider Gmail" />
+<meta name="apple-mobile-web-app-title" content="Vider stockage" />
 <meta name="theme-color" content="#F0F2ED" />
 <link rel="apple-touch-icon" href="icon.png" />
 <link rel="icon" href="icon.png" />
+<link rel="manifest" href="manifest.json" />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
@@ -44,6 +45,7 @@
   .gauge-label .muted{ color:var(--ink-soft); }
   .gauge-track{ height:10px; background:var(--paper); border:1px solid var(--line); border-radius:99px; overflow:hidden; }
   .gauge-fill{ height:100%; width:0%; background:linear-gradient(90deg, var(--brand), var(--brand-dark)); transition:width .35s ease; border-radius:99px; }
+  .gauge-warning{ margin:10px 0 0; font-size:12.5px; color:var(--danger); line-height:1.4; }
 
   .panel{ background:var(--card); border:1px solid var(--line); border-radius:var(--radius); padding:20px; margin-bottom:16px; }
   .panel h2{ font-family:var(--font-display); font-size:20px; margin:0 0 8px; font-weight:600; }
@@ -52,6 +54,9 @@
   .status-banner{ border-radius:var(--radius-sm); padding:12px 14px; margin-bottom:16px; font-size:14px; line-height:1.4; }
   .status-banner.error{ background:var(--danger-tint); color:var(--danger); border:1px solid #E3B8AE; }
   .status-banner.info{ background:var(--brand-tint); color:var(--brand-dark); border:1px solid #BFD6CE; }
+
+  .install-banner{ display:flex; align-items:center; justify-content:space-between; gap:12px; background:var(--brand-tint); border:1px solid #BFD6CE; border-radius:var(--radius-sm); padding:10px 14px; margin-bottom:16px; font-size:13px; color:var(--brand-dark); line-height:1.4; }
+  .install-banner .btn-link{ color:var(--brand-dark); font-weight:700; flex:none; }
 
   .field{ display:block; margin-bottom:16px; }
   .field span{ display:block; font-size:13px; font-weight:600; margin-bottom:6px; color:var(--ink); }
@@ -65,6 +70,10 @@
   .toggle-field input{ margin-top:3px; width:20px; height:20px; accent-color:var(--danger); flex:none; }
   .toggle-field strong{ display:block; font-size:14px; }
   .toggle-field small{ display:block; color:var(--ink-soft); font-size:12.5px; line-height:1.4; margin-top:2px; }
+
+  .service-switch{ display:flex; gap:4px; margin-bottom:18px; background:var(--paper); padding:4px; border-radius:var(--radius-sm); border:1px solid var(--line); }
+  .service-tab{ flex:1; appearance:none; border:none; background:transparent; padding:10px; border-radius:8px; font-family:var(--font-body); font-weight:600; font-size:14px; color:var(--ink-soft); cursor:pointer; }
+  .service-tab.active{ background:var(--card); color:var(--ink); box-shadow:0 1px 3px rgba(23,35,31,.12); }
 
   .btn{ appearance:none; border:none; border-radius:var(--radius-sm); font-family:var(--font-body); font-weight:600; font-size:15px; padding:14px 20px; cursor:pointer; }
   .btn:disabled{ opacity:.5; cursor:default; }
@@ -143,10 +152,15 @@
 <body>
   <div class="app">
     <header class="hero">
-      <p class="eyebrow">Boîte Gmail</p>
+      <p class="eyebrow">Compte Google</p>
       <h1>Vider le stockage</h1>
-      <p class="lede">Repère les emails les plus lourds, archive-les vers une autre adresse, libère la place.</p>
+      <p class="lede">Repère les plus gros éléments de ta boîte Gmail ou de ton Drive, mets-les de côté, libère la place.</p>
     </header>
+
+    <div class="install-banner" id="installBanner" hidden>
+      <span id="installText"></span>
+      <button id="installBtn" class="btn-link" type="button" hidden>Installer</button>
+    </div>
 
     <section class="gauge-card" id="gaugeCard" hidden>
       <div class="gauge-label">
@@ -154,6 +168,7 @@
         <span class="muted" id="gaugeTotalText">sélectionnés sur 0 Mo trouvés</span>
       </div>
       <div class="gauge-track"><div class="gauge-fill" id="gaugeFill"></div></div>
+      <p class="gauge-warning" id="gaugeWarning" hidden>⚠️ Lot volumineux : risque de manque de mémoire sur mobile. Mieux vaut traiter par petits groupes.</p>
     </section>
 
     <div id="statusBanner" class="status-banner" hidden></div>
@@ -180,9 +195,13 @@
 
     <section id="connectPanel" class="panel" hidden>
       <h2>Connexion</h2>
+      <div class="service-switch" id="serviceSwitch">
+        <button type="button" class="service-tab active" data-service="gmail">Gmail</button>
+        <button type="button" class="service-tab" data-service="drive">Drive</button>
+      </div>
       <p>Connecte-toi avec le compte Google dont tu veux libérer le stockage.</p>
       <label class="field">
-        <span>Adresse Gmail à nettoyer (optionnel)</span>
+        <span>Compte Google à utiliser (optionnel)</span>
         <input type="email" id="accountHintInput" placeholder="toi@gmail.com" inputmode="email" autocomplete="email" />
       </label>
       <button id="connectBtn" class="btn btn-primary btn-block" disabled>Chargement…</button>
@@ -192,10 +211,12 @@
 
     <section id="controlsPanel" class="panel" hidden>
       <h2>Recherche</h2>
-      <label class="field">
-        <span>Transférer les emails trouvés vers</span>
-        <input type="email" id="forwardToInput" placeholder="archive@exemple.com" inputmode="email" autocomplete="email" />
-      </label>
+      <div id="forwardToField">
+        <label class="field">
+          <span>Transférer les emails trouvés vers</span>
+          <input type="email" id="forwardToInput" placeholder="archive@exemple.com" inputmode="email" autocomplete="email" />
+        </label>
+      </div>
       <label class="field">
         <span>Taille minimale (Mo)</span>
         <input type="number" id="minSizeInput" value="10" min="1" step="1" inputmode="numeric" />
@@ -208,7 +229,7 @@
         </span>
       </label>
       <button id="scanBtn" class="btn btn-primary btn-block">Rechercher les emails volumineux</button>
-      <p class="hint">Jusqu'à 50 résultats par recherche, triés par pertinence Gmail. Relance une recherche après traitement pour voir les suivants.</p>
+      <p class="hint" id="scanHint">Jusqu'à 50 résultats par recherche, triés par pertinence Gmail. Relance une recherche après traitement pour voir les suivants.</p>
     </section>
 
     <section id="loadingPanel" class="panel" hidden>
@@ -260,10 +281,12 @@
 // Le Client ID Google (OAuth "Web application") est saisi une fois dans l'app
 // elle-meme (ecran de configuration) et memorise sur cet appareil/navigateur —
 // pas besoin d'editer ce fichier. Voir SETUP.md pour l'obtenir.
-const SCOPE_SAFE = "https://www.googleapis.com/auth/gmail.modify https://www.googleapis.com/auth/gmail.send";
-const SCOPE_FULL = "https://mail.google.com/";
+const SCOPE_GMAIL_SAFE = "https://www.googleapis.com/auth/gmail.modify https://www.googleapis.com/auth/gmail.send";
+const SCOPE_GMAIL_FULL = "https://mail.google.com/";
+const SCOPE_DRIVE = "https://www.googleapis.com/auth/drive";
 const MAX_RESULTS = 50;
 const PROCESS_DELAY_MS = 400;
+const LARGE_BATCH_BYTES = 300 * 1024 * 1024;
 const CLIENT_ID_STORAGE_KEY = "gmailCleanupClientId";
 
 function loadStoredClientId() {
@@ -284,9 +307,10 @@ function saveStoredAccountHint(value) {
 const state = {
   clientId: loadStoredClientId(),
   accountHint: loadStoredAccountHint(),
+  service: "gmail",   // "gmail" | "drive"
   accessToken: null,
   scope: null,
-  messages: [],       // {id, subject, from, size, selected}
+  messages: [],       // {id, title, subtitle, size, selected, mimeType?}
   forwardTo: "",
   minSizeMb: 10,
   permanentDelete: false,
@@ -383,8 +407,12 @@ function requestToken(scope) {
     client.requestAccessToken();
   });
 }
+function neededScope() {
+  if (state.service === "drive") return SCOPE_DRIVE;
+  return state.permanentDelete ? SCOPE_GMAIL_FULL : SCOPE_GMAIL_SAFE;
+}
 async function ensureAuthForCurrentMode() {
-  const needed = state.permanentDelete ? SCOPE_FULL : SCOPE_SAFE;
+  const needed = neededScope();
   if (state.accessToken && state.scope === needed) return;
   const resp = await requestToken(needed);
   state.accessToken = resp.access_token;
@@ -440,6 +468,79 @@ async function forwardMessage(id, forwardTo) {
 function trashMessage(id) { return gmailFetch(`/messages/${id}/trash`, { method: "POST" }); }
 function deleteMessagePermanently(id) { return gmailFetch(`/messages/${id}`, { method: "DELETE" }); }
 
+// ============ API DRIVE ============
+async function driveFetch(path, options = {}) {
+  const res = await fetch(`https://www.googleapis.com/drive/v3${path}`, {
+    ...options,
+    headers: { ...(options.headers || {}), Authorization: `Bearer ${state.accessToken}` },
+  });
+  if (!res.ok) {
+    let detail = "";
+    try { detail = (await res.json()).error?.message || ""; } catch (_) {}
+    throw new Error(`Drive API ${res.status}${detail ? " — " + detail : ""}`);
+  }
+  if (res.status === 204) return null;
+  return res.json();
+}
+async function findLargeDriveFiles(minSizeMb, maxResults) {
+  const q = "trashed=false and mimeType!='application/vnd.google-apps.folder' and mimeType!='application/vnd.google-apps.shortcut'";
+  let found = [];
+  let pageToken;
+  while (found.length < maxResults) {
+    const params = new URLSearchParams({
+      q,
+      orderBy: "quotaBytesUsed desc",
+      pageSize: String(Math.min(100, maxResults - found.length)),
+      fields: "nextPageToken, files(id, name, size, mimeType, quotaBytesUsed)",
+    });
+    if (pageToken) params.set("pageToken", pageToken);
+    const resp = await driveFetch(`/files?${params.toString()}`);
+    found = found.concat(resp.files || []);
+    pageToken = resp.nextPageToken;
+    if (!pageToken) break;
+  }
+  const minBytes = minSizeMb * 1024 * 1024;
+  return found.filter((f) => Number(f.quotaBytesUsed || f.size || 0) >= minBytes).slice(0, maxResults);
+}
+const DRIVE_EXPORT_MAP = {
+  "application/vnd.google-apps.document": { mime: "application/pdf", ext: ".pdf" },
+  "application/vnd.google-apps.spreadsheet": { mime: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", ext: ".xlsx" },
+  "application/vnd.google-apps.presentation": { mime: "application/vnd.openxmlformats-officedocument.presentationml.presentation", ext: ".pptx" },
+  "application/vnd.google-apps.drawing": { mime: "application/pdf", ext: ".pdf" },
+};
+async function downloadDriveFile(file) {
+  const isNative = file.mimeType.startsWith("application/vnd.google-apps.");
+  let url, filename;
+  if (isNative) {
+    const target = DRIVE_EXPORT_MAP[file.mimeType];
+    if (!target) throw new Error("Type Google non exportable automatiquement");
+    url = `https://www.googleapis.com/drive/v3/files/${file.id}/export?mimeType=${encodeURIComponent(target.mime)}`;
+    filename = file.name + target.ext;
+  } else {
+    url = `https://www.googleapis.com/drive/v3/files/${file.id}?alt=media`;
+    filename = file.name;
+  }
+  const res = await fetch(url, { headers: { Authorization: `Bearer ${state.accessToken}` } });
+  if (!res.ok) throw new Error(`Drive API ${res.status} (téléchargement)`);
+  const blob = await res.blob();
+  const objectUrl = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = objectUrl;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(objectUrl), 4000);
+}
+function trashDriveFile(id) {
+  return driveFetch(`/files/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ trashed: true }),
+  });
+}
+function deleteDriveFilePermanently(id) { return driveFetch(`/files/${id}`, { method: "DELETE" }); }
+
 // ============ HELPERS UI ============
 const $ = (id) => document.getElementById(id);
 function humanSize(n) {
@@ -471,6 +572,7 @@ function updateGauge() {
   $("gaugeSelectedText").textContent = humanSize(selectedSize);
   $("gaugeTotalText").textContent = `sélectionnés sur ${humanSize(totalSize)} trouvés`;
   $("gaugeFill").style.width = totalSize > 0 ? `${(selectedSize / totalSize) * 100}%` : "0%";
+  $("gaugeWarning").hidden = selectedSize <= LARGE_BATCH_BYTES;
   const count = selected.length;
   $("actionBar").hidden = count === 0;
   $("actionBarCount").textContent = String(count);
@@ -489,15 +591,16 @@ function renderResults() {
       </div>
       <span class="result-size">${humanSize(m.size)}</span>
     `;
-    li.querySelector(".result-subject").textContent = m.subject;
-    li.querySelector(".result-from").textContent = m.from;
+    li.querySelector(".result-subject").textContent = m.title;
+    li.querySelector(".result-from").textContent = m.subtitle;
     li.querySelector("input").addEventListener("change", (e) => {
       m.selected = e.target.checked;
       updateGauge();
     });
     list.appendChild(li);
   }
-  $("resultsCountText").textContent = `${state.messages.length} email(s) trouvé(s)`;
+  const unit = state.service === "drive" ? "fichier(s)" : "email(s)";
+  $("resultsCountText").textContent = `${state.messages.length} ${unit} trouvé(s)`;
 }
 
 // ============ FLUX PRINCIPAL ============
@@ -517,15 +620,17 @@ async function onConnect() {
 }
 
 async function onScan() {
-  const forwardTo = $("forwardToInput").value.trim();
-  const minSizeMb = parseFloat($("minSizeInput").value) || 10;
-  if (!forwardTo.includes("@")) {
-    showStatus("Renseigne une adresse email de destination valide.", "error");
-    return;
-  }
-  state.forwardTo = forwardTo;
-  state.minSizeMb = minSizeMb;
   showStatus("", null);
+  if (state.service === "gmail") {
+    const forwardTo = $("forwardToInput").value.trim();
+    if (!forwardTo.includes("@")) {
+      showStatus("Renseigne une adresse email de destination valide.", "error");
+      return;
+    }
+    state.forwardTo = forwardTo;
+  }
+  const minSizeMb = parseFloat($("minSizeInput").value) || 10;
+  state.minSizeMb = minSizeMb;
 
   showPanel("loadingPanel");
   $("loadingTitle").textContent = "Recherche en cours…";
@@ -533,6 +638,30 @@ async function onScan() {
 
   try {
     await ensureAuthForCurrentMode();
+
+    if (state.service === "drive") {
+      const found = await findLargeDriveFiles(minSizeMb, MAX_RESULTS);
+      if (found.length === 0) {
+        $("emptyText").textContent = `Aucun fichier de plus de ${minSizeMb} Mo trouvé (hors corbeille). Essaie un seuil plus bas.`;
+        showPanel("emptyPanel");
+        return;
+      }
+      const details = found.map((f) => ({
+        id: f.id,
+        title: f.name,
+        subtitle: f.mimeType.startsWith("application/vnd.google-apps.") ? "Document Google" : f.mimeType,
+        size: Number(f.quotaBytesUsed || f.size || 0),
+        mimeType: f.mimeType,
+        selected: true,
+      }));
+      details.sort((a, b) => b.size - a.size);
+      state.messages = details;
+      renderResults();
+      updateGauge();
+      showPanel("resultsPanel");
+      return;
+    }
+
     const found = await findLargeMessages(minSizeMb, MAX_RESULTS);
     if (found.length === 0) {
       $("emptyText").textContent = `Aucun email de plus de ${minSizeMb} Mo trouvé (hors corbeille et spam). Essaie un seuil plus bas.`;
@@ -549,8 +678,8 @@ async function onScan() {
         for (const h of meta.payload.headers) headers[h.name] = h.value;
         details.push({
           id: found[i].id,
-          subject: headers.Subject || "(sans objet)",
-          from: headers.From || "?",
+          title: headers.Subject || "(sans objet)",
+          subtitle: headers.From || "?",
           size: meta.sizeEstimate || 0,
           selected: true,
         });
@@ -569,14 +698,38 @@ async function onScan() {
   }
 }
 
+async function withRetry(fn, attempts, delayMs) {
+  let lastErr;
+  for (let i = 0; i < attempts; i++) {
+    try { return await fn(); } catch (e) {
+      lastErr = e;
+      if (i < attempts - 1) await sleep(delayMs);
+    }
+  }
+  throw lastErr;
+}
+
 async function onProcess() {
   const selected = state.messages.filter((m) => m.selected);
   if (selected.length === 0) return;
 
-  if (state.permanentDelete) {
-    const ok = confirm(
-      `Suppression DÉFINITIVE et IRRÉVERSIBLE de ${selected.length} email(s), après transfert vers ${state.forwardTo}.\n\nContinuer ?`
+  const selectedSize = selected.reduce((s, m) => s + m.size, 0);
+  if (selectedSize > LARGE_BATCH_BYTES) {
+    const verb = state.service === "drive" ? "Le téléchargement" : "La récupération";
+    const proceedLarge = confirm(
+      `Lot volumineux : ${humanSize(selectedSize)} au total.\n\n` +
+      `${verb} de gros éléments passe par la mémoire du navigateur : sur mobile, ça peut faire manquer de mémoire à Safari et fermer la page en plein traitement.\n\n` +
+      `Conseil : décoche une partie de la sélection et traite par petits groupes.\n\n` +
+      `Continuer quand même avec ${humanSize(selectedSize)} ?`
     );
+    if (!proceedLarge) return;
+  }
+
+  const actionLabel = state.service === "drive"
+    ? `téléchargement puis suppression DÉFINITIVE et IRRÉVERSIBLE de ${selected.length} fichier(s)`
+    : `transfert vers ${state.forwardTo} puis suppression DÉFINITIVE et IRRÉVERSIBLE de ${selected.length} email(s)`;
+  if (state.permanentDelete) {
+    const ok = confirm(`${actionLabel}.\n\nContinuer ?`);
     if (!ok) return;
   }
 
@@ -592,27 +745,44 @@ async function onProcess() {
     return;
   }
 
-  let ok = 0, errors = 0;
+  let ok = 0, errors = 0, partial = 0;
   for (let i = 0; i < selected.length; i++) {
     const m = selected[i];
-    $("processingProgress").textContent = `${i + 1} / ${selected.length} — ${m.subject.slice(0, 40)}`;
+    $("processingProgress").textContent = `${i + 1} / ${selected.length} — ${m.title.slice(0, 40)}`;
     try {
-      await forwardMessage(m.id, state.forwardTo);
-      if (state.permanentDelete) await deleteMessagePermanently(m.id);
-      else await trashMessage(m.id);
-      ok++;
-      await sleep(PROCESS_DELAY_MS);
+      if (state.service === "drive") await downloadDriveFile(m);
+      else await forwardMessage(m.id, state.forwardTo);
     } catch (e) {
       errors++;
+      continue; // rien fait sur cet element, il faut le retrouver tel quel au prochain scan
     }
+    try {
+      await withRetry(() => {
+        if (state.service === "drive") {
+          return state.permanentDelete ? deleteDriveFilePermanently(m.id) : trashDriveFile(m.id);
+        }
+        return state.permanentDelete ? deleteMessagePermanently(m.id) : trashMessage(m.id);
+      }, 2, 1200);
+      ok++;
+    } catch (e) {
+      partial++; // transfert/telechargement fait, suppression KO -> reapparaitra dans une recherche
+    }
+    await sleep(PROCESS_DELAY_MS);
   }
 
-  $("doneTitle").textContent = errors === 0 ? "Terminé" : "Terminé avec erreurs";
-  let detail = `${ok} email(s) traité(s)`;
-  if (errors > 0) detail += `, ${errors} erreur(s)`;
+  const unit = state.service === "drive" ? "fichier(s)" : "email(s)";
+  $("doneTitle").textContent = (errors === 0 && partial === 0) ? "Terminé" : "Terminé avec erreurs";
+  let detail = `${ok} ${unit} traité(s) en entier`;
+  if (partial > 0) {
+    const verbe = state.service === "drive" ? "téléchargé(s)" : "transféré(s)";
+    detail += ` — ${partial} ${verbe} mais pas supprimé(s) (erreur sur cette étape) : ils réapparaîtront dans une recherche`;
+  }
+  if (errors > 0) detail += ` — ${errors} échec(s) complet(s)`;
   detail += ".";
   if (!state.permanentDelete && ok > 0) {
-    detail += " Les emails sont dans la Corbeille : l'espace ne sera libéré qu'après suppression définitive (automatique après 30 jours, ou vidage manuel de la Corbeille dans Gmail).";
+    detail += state.service === "drive"
+      ? " Les fichiers sont dans la Corbeille Drive : l'espace ne sera libéré qu'après suppression définitive (automatique après 30 jours, ou vidage manuel de la Corbeille dans Drive)."
+      : " Les emails sont dans la Corbeille : l'espace ne sera libéré qu'après suppression définitive (automatique après 30 jours, ou vidage manuel de la Corbeille dans Gmail).";
   }
   $("doneDetail").textContent = detail;
   state.messages = [];
@@ -672,6 +842,23 @@ $("permanentDeleteToggle").addEventListener("change", (e) => {
   }
 });
 
+$("serviceSwitch").addEventListener("click", (e) => {
+  const btn = e.target.closest(".service-tab");
+  if (!btn || btn.dataset.service === state.service) return;
+  state.service = btn.dataset.service;
+  state.accessToken = null;
+  state.scope = null;
+  state.messages = [];
+  document.querySelectorAll(".service-tab").forEach((b) => b.classList.toggle("active", b === btn));
+  const isDrive = state.service === "drive";
+  $("forwardToField").hidden = isDrive;
+  $("scanBtn").textContent = isDrive ? "Rechercher les fichiers volumineux" : "Rechercher les emails volumineux";
+  $("scanHint").textContent = isDrive
+    ? "Jusqu'à 50 résultats par recherche, triés par taille. Relance une recherche après traitement pour voir les suivants."
+    : "Jusqu'à 50 résultats par recherche, triés par pertinence Gmail. Relance une recherche après traitement pour voir les suivants.";
+  updateGauge();
+});
+
 $("copyOriginBtn").addEventListener("click", async () => {
   try {
     await navigator.clipboard.writeText(window.location.origin);
@@ -681,6 +868,39 @@ $("copyOriginBtn").addEventListener("click", async () => {
     // API clipboard indisponible : la valeur reste affichee et selectionnable manuellement
   }
 });
+
+// ============ INSTALLATION PWA ============
+// Detection reelle par capacite disponible, pas par nom de navigateur :
+// - Chrome/Edge/Chromium exposent l'evenement beforeinstallprompt -> bouton natif
+// - iOS Safari n'expose jamais cet evenement mais expose navigator.standalone
+//   (absent partout ailleurs) -> on l'utilise comme signal de capacite pour
+//   afficher les instructions manuelles a la place.
+let deferredInstallPrompt = null;
+const isStandaloneAlready = window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone === true;
+const supportsIosInstall = "standalone" in window.navigator;
+
+window.addEventListener("beforeinstallprompt", (e) => {
+  e.preventDefault();
+  deferredInstallPrompt = e;
+  if (isStandaloneAlready) return;
+  $("installBanner").hidden = false;
+  $("installText").textContent = "Installe cette app pour un accès rapide, en plein écran.";
+  $("installBtn").hidden = false;
+});
+$("installBtn").addEventListener("click", async () => {
+  if (!deferredInstallPrompt) return;
+  deferredInstallPrompt.prompt();
+  await deferredInstallPrompt.userChoice;
+  deferredInstallPrompt = null;
+  $("installBanner").hidden = true;
+});
+window.addEventListener("appinstalled", () => { $("installBanner").hidden = true; });
+
+if (!isStandaloneAlready && !deferredInstallPrompt && supportsIosInstall) {
+  $("installBanner").hidden = false;
+  $("installText").textContent = 'Pour l\'installer : bouton Partager, puis "Sur l\'écran d\'accueil".';
+  $("installBtn").hidden = true;
+}
 
 waitForGis();
 $("accountHintInput").value = state.accountHint;
