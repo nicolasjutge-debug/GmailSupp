@@ -8,8 +8,8 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
 <meta name="apple-mobile-web-app-title" content="Vider stockage" />
 <meta name="theme-color" content="#F0F2ED" />
-<link rel="apple-touch-icon" href="icon.png" />
-<link rel="icon" href="icon.png" />
+<link rel="apple-touch-icon" href="icon-192.png" />
+<link rel="icon" href="icon-192.png" />
 <link rel="manifest" href="manifest.json" />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -287,6 +287,7 @@ const SCOPE_DRIVE = "https://www.googleapis.com/auth/drive";
 const MAX_RESULTS = 50;
 const PROCESS_DELAY_MS = 400;
 const LARGE_BATCH_BYTES = 300 * 1024 * 1024;
+const GMAIL_SEND_MAX_BYTES = 35 * 1024 * 1024; // limite reelle de l'API Gmail (uploadType=media) pour l'envoi
 const CLIENT_ID_STORAGE_KEY = "gmailCleanupClientId";
 
 function loadStoredClientId() {
@@ -325,12 +326,6 @@ function base64UrlToBytes(b64url) {
   for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
   return bytes;
 }
-function bytesToBase64Url(bytes) {
-  let binary = "";
-  for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
-  const b64 = btoa(binary);
-  return b64.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-}
 function findHeaderBoundary(bytes) {
   for (let i = 0; i < bytes.length - 3; i++) {
     if (bytes[i] === 13 && bytes[i+1] === 10 && bytes[i+2] === 13 && bytes[i+3] === 10) return i + 4;
@@ -366,7 +361,7 @@ function rewriteRawMessage(rawBytes, forwardTo) {
   for (const line of lines) {
     const m = line.match(/^([^:]+):\s?([\s\S]*)$/);
     const name = m ? m[1].toLowerCase() : "";
-    if (name === "to" || name === "cc" || name === "bcc" || name === "delivered-to") continue;
+    if (name === "to" || name === "cc" || name === "bcc" || name === "delivered-to" || name === "from") continue;
     if (name === "subject") { subjectValue = m[2]; continue; }
     kept.push(line);
   }
@@ -454,16 +449,31 @@ async function getMetadata(id) {
   params.append("metadataHeaders", "From");
   return gmailFetch(`/messages/${id}?${params.toString()}`);
 }
+// Envoi via le point d'entree "upload" (uploadType=media), qui accepte le
+// message brut (jusqu'a ~35 Mo) au lieu du point d'entree standard utilise par
+// gmailFetch, limite a 1 Mo pour un corps JSON — largement insuffisant des
+// qu'un email depasse quelques centaines de Ko une fois encode en base64.
+async function gmailSendRawMessage(bytes) {
+  const res = await fetch(`https://gmail.googleapis.com/upload/gmail/v1/users/me/messages/send?uploadType=media`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${state.accessToken}`, "Content-Type": "message/rfc822" },
+    body: bytes,
+  });
+  if (!res.ok) {
+    let detail = "";
+    try { detail = (await res.json()).error?.message || ""; } catch (_) {}
+    throw new Error(`Gmail API ${res.status}${detail ? " — " + detail : ""}`);
+  }
+  return res.json();
+}
 async function forwardMessage(id, forwardTo) {
   const raw = await gmailFetch(`/messages/${id}?format=raw`);
   const bytes = base64UrlToBytes(raw.raw);
   const rewritten = rewriteRawMessage(bytes, forwardTo);
-  const encoded = bytesToBase64Url(rewritten);
-  return gmailFetch(`/messages/send`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ raw: encoded }),
-  });
+  if (rewritten.length > GMAIL_SEND_MAX_BYTES) {
+    throw new Error(`Message trop volumineux pour l'API Gmail (${humanSize(rewritten.length)}, limite ~35 Mo) : a traiter manuellement dans Gmail.`);
+  }
+  return gmailSendRawMessage(rewritten);
 }
 function trashMessage(id) { return gmailFetch(`/messages/${id}/trash`, { method: "POST" }); }
 function deleteMessagePermanently(id) { return gmailFetch(`/messages/${id}`, { method: "DELETE" }); }
@@ -745,7 +755,7 @@ async function onProcess() {
     return;
   }
 
-  let ok = 0, errors = 0, partial = 0;
+  let ok = 0, errors = 0, partial = 0, lastErrorMessage = "";
   for (let i = 0; i < selected.length; i++) {
     const m = selected[i];
     $("processingProgress").textContent = `${i + 1} / ${selected.length} — ${m.title.slice(0, 40)}`;
@@ -754,6 +764,7 @@ async function onProcess() {
       else await forwardMessage(m.id, state.forwardTo);
     } catch (e) {
       errors++;
+      lastErrorMessage = e.message || String(e);
       continue; // rien fait sur cet element, il faut le retrouver tel quel au prochain scan
     }
     try {
@@ -779,6 +790,7 @@ async function onProcess() {
   }
   if (errors > 0) detail += ` — ${errors} échec(s) complet(s)`;
   detail += ".";
+  if (errors > 0 && lastErrorMessage) detail += ` Détail de la dernière erreur : ${lastErrorMessage}`;
   if (!state.permanentDelete && ok > 0) {
     detail += state.service === "drive"
       ? " Les fichiers sont dans la Corbeille Drive : l'espace ne sera libéré qu'après suppression définitive (automatique après 30 jours, ou vidage manuel de la Corbeille dans Drive)."
