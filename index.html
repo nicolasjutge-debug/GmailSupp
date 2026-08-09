@@ -76,6 +76,12 @@
   .btn-link{ background:none; border:none; color:var(--brand-dark); font-family:var(--font-body); font-size:13px; font-weight:600; padding:6px 0; cursor:pointer; }
   .hint{ font-size:12.5px; color:var(--ink-soft); margin-top:10px; }
 
+  .origin-box{ background:var(--paper); border:1px dashed var(--line); border-radius:var(--radius-sm); padding:12px 14px; margin-bottom:16px; }
+  .origin-label{ display:block; font-size:12px; color:var(--ink-soft); line-height:1.4; margin-bottom:8px; }
+  .origin-row{ display:flex; align-items:center; justify-content:space-between; gap:10px; }
+  .origin-row code{ font-family:var(--font-mono); font-size:13px; color:var(--ink); word-break:break-all; }
+  .origin-warning{ background:var(--danger-tint); color:var(--danger); border:1px solid #E3B8AE; border-radius:var(--radius-sm); padding:10px 14px; font-size:13px; line-height:1.4; margin-bottom:16px; }
+
   .results-header{ display:flex; justify-content:space-between; margin-bottom:8px; }
   .results-list{ list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:10px; }
   .result-item{ display:flex; gap:12px; align-items:flex-start; border:1px solid var(--line); border-radius:var(--radius-sm); padding:12px; background:var(--paper); }
@@ -96,6 +102,42 @@
 
   [hidden]{ display:none !important; }
   a{ color:var(--brand-dark); }
+
+  /* ===== Adaptation PC / souris : detection reelle par capacite d'entree
+     (pointer fin + hover disponible), pas par largeur d'ecran — un
+     navigateur redimensionne, un pointeur fin ne devient pas un doigt. ===== */
+  @media (pointer:fine) and (hover:hover){
+    body{ padding-bottom:140px; }
+    .app{ max-width:720px; padding-top:48px; }
+    h1{ font-size:40px; }
+    .lede{ max-width:52ch; }
+
+    .btn{ padding:11px 18px; font-size:14px; }
+    .btn-primary:hover:not(:disabled){ background:var(--brand-dark); }
+    .btn-primary.danger:hover:not(:disabled){ background:#7E2626; }
+    .btn-secondary:hover{ background:var(--brand-tint); border-color:var(--brand); }
+    .btn-link:hover{ text-decoration:underline; }
+
+    .field input:hover{ border-color:var(--ink-soft); }
+    .toggle-field:hover{ background:var(--brand-tint); border-radius:var(--radius-sm); }
+    .field input{ transition:border-color .15s ease; }
+
+    .result-item{ padding:10px 14px; transition:border-color .15s ease, background .15s ease; }
+    .result-item:hover{ border-color:var(--brand); background:var(--card); }
+    .result-item input, .toggle-field input{ width:18px; height:18px; }
+
+    .gauge-card, .panel{ padding:24px 26px; }
+
+    /* Barre d'action : flottante et centree sur la largeur du contenu,
+       plutot que collee bord a bord comme sur mobile. */
+    .action-bar{
+      left:50%; right:auto; bottom:24px; transform:translateX(-50%);
+      width:min(720px, calc(100% - 48px));
+      border:1px solid var(--line); border-radius:var(--radius);
+      box-shadow:0 12px 32px rgba(23,35,31,.14);
+      padding:14px 24px;
+    }
+  }
 </style>
 </head>
 <body>
@@ -123,6 +165,16 @@
         <span>Client ID Google</span>
         <input type="text" id="clientIdInput" placeholder="xxxxxxxx.apps.googleusercontent.com" autocapitalize="off" autocorrect="off" spellcheck="false" />
       </label>
+      <div class="origin-warning" id="fileProtocolWarning" hidden>
+        ⚠️ Cette page est ouverte comme fichier local (<code>file://</code>) : la connexion Google ne peut pas fonctionner dans ce mode, quelle que soit la configuration. Il faut héberger <code>index.html</code> sur une vraie URL https (voir SETUP.md, section "Héberger les fichiers").
+      </div>
+      <div class="origin-box" id="originBox">
+        <span class="origin-label">Origine de cette page — à coller telle quelle dans "Authorized JavaScript origins" sur Google Cloud Console :</span>
+        <div class="origin-row">
+          <code id="originValue"></code>
+          <button id="copyOriginBtn" class="btn-link" type="button">Copier</button>
+        </div>
+      </div>
       <button id="saveClientIdBtn" class="btn btn-primary btn-block">Continuer</button>
     </section>
 
@@ -620,8 +672,20 @@ $("permanentDeleteToggle").addEventListener("change", (e) => {
   }
 });
 
+$("copyOriginBtn").addEventListener("click", async () => {
+  try {
+    await navigator.clipboard.writeText(window.location.origin);
+    $("copyOriginBtn").textContent = "Copié !";
+    setTimeout(() => { $("copyOriginBtn").textContent = "Copier"; }, 1500);
+  } catch (_) {
+    // API clipboard indisponible : la valeur reste affichee et selectionnable manuellement
+  }
+});
+
 waitForGis();
 $("accountHintInput").value = state.accountHint;
+$("originValue").textContent = window.location.origin || "(inconnue)";
+$("fileProtocolWarning").hidden = window.location.protocol !== "file:";
 showPanel(state.clientId ? "connectPanel" : "configPanel");
 </script>
 </body>
