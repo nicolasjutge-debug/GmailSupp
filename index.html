@@ -756,6 +756,29 @@ async function withRetry(fn, attempts, delayMs) {
   }
   throw lastErr;
 }
+// Une erreur "Gmail API xxx" / "Drive API xxx" vient d'une reponse HTTP recue
+// explicitement : le serveur a repondu, donc on sait avec certitude que rien
+// n'a ete envoye/traite — reessayer est sans risque. Toute autre erreur (ex.
+// "Load failed", "Failed to fetch", coupure reseau) signifie qu'aucune
+// reponse n'est jamais arrivee : impossible de savoir si l'envoi a quand
+// meme abouti cote serveur avant la coupure — reessayer risquerait de creer
+// un doublon. Ce n'est pas forcement lie a une mise en arriere-plan : une
+// simple coupure Wi-Fi/4G en cours de route donne la meme erreur ambigue.
+function isAmbiguousNetworkError(e) {
+  const msg = (e && e.message) || String(e);
+  return !(msg.startsWith("Gmail API ") || msg.startsWith("Drive API "));
+}
+async function withRetrySafe(fn, attempts, delayMs) {
+  let lastErr;
+  for (let i = 0; i < attempts; i++) {
+    try { return await fn(); } catch (e) {
+      lastErr = e;
+      if (isAmbiguousNetworkError(e)) throw e; // pas sûr que rien n'a ete fait : on n'insiste pas
+      if (i < attempts - 1) await sleep(delayMs);
+    }
+  }
+  throw lastErr;
+}
 
 async function onProcess() {
   const selected = state.messages.filter((m) => m.selected);
@@ -805,9 +828,9 @@ async function onProcess() {
     $("processingProgress").textContent = `${i + 1} / ${selected.length} — ${m.title.slice(0, 40)}`;
     let downloadedThisOne = false;
     try {
-      if (state.service === "drive") await downloadDriveFile(m);
+      if (state.service === "drive") await withRetry(() => downloadDriveFile(m), 2, 1200);
       else {
-        const result = await forwardMessage(m.id, state.forwardTo, m.title);
+        const result = await withRetrySafe(() => forwardMessage(m.id, state.forwardTo, m.title), 2, 1200);
         downloadedThisOne = !!(result && result.downloadedInstead);
       }
     } catch (e) {
@@ -841,8 +864,10 @@ async function onProcess() {
   if (errors > 0) detail += ` — ${errors} échec(s) complet(s)`;
   detail += ".";
   if (errors > 0 && lastErrorMessage) detail += ` Détail de la dernière erreur : ${lastErrorMessage}`;
-  if (wasBackgrounded && errors > 0) {
-    detail += ` L'app a été mise en arrière-plan pendant le traitement (écran verrouillé ou changement d'appli) : Safari coupe alors les requêtes en cours, ce qui explique probablement une partie de ces échecs. Relance en gardant l'app ouverte et visible jusqu'à la fin.`;
+  if (errors > 0) {
+    detail += wasBackgrounded
+      ? ` L'app a été mise en arrière-plan pendant le traitement (écran verrouillé ou changement d'appli) : Safari coupe alors les requêtes en cours, ce qui explique probablement une partie de ces échecs. Relance en gardant l'app ouverte et visible jusqu'à la fin.`
+      : ` Ces échecs n'ont pas de cause identifiée côté app (pas de mise en arrière-plan détectée) : la piste la plus probable est une coupure réseau ponctuelle (Wi-Fi/4G) pendant l'envoi — le Wi-Fi est plus stable que la 4G pour un gros lot. Les éléments concernés réapparaîtront dans une recherche : aucune perte, mais vérifie ta boîte d'archive au cas où un envoi aurait malgré tout abouti juste avant la coupure.`;
   }
   if (!state.permanentDelete && ok > 0) {
     detail += state.service === "drive"
