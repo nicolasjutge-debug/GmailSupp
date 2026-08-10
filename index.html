@@ -466,12 +466,31 @@ async function gmailSendRawMessage(bytes) {
   }
   return res.json();
 }
-async function forwardMessage(id, forwardTo) {
+function downloadRawEmail(bytes, subjectHint) {
+  const blob = new Blob([bytes], { type: "message/rfc822" });
+  const objectUrl = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = objectUrl;
+  const safeName = (subjectHint || "email").replace(/[\\/:*?"<>|]/g, "_").slice(0, 80) || "email";
+  a.download = safeName + ".eml";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(objectUrl), 4000);
+}
+async function forwardMessage(id, forwardTo, subjectHint) {
   const raw = await gmailFetch(`/messages/${id}?format=raw`);
   const bytes = base64UrlToBytes(raw.raw);
   const rewritten = rewriteRawMessage(bytes, forwardTo);
   if (rewritten.length > GMAIL_SEND_MAX_BYTES) {
-    throw new Error(`Message trop volumineux pour l'API Gmail (${humanSize(rewritten.length)}, limite ~35 Mo) : a traiter manuellement dans Gmail.`);
+    // Au-dela de ~35 Mo, aucune methode d'envoi Gmail (API ou meme l'appli Gmail
+    // elle-meme) ne peut transmettre le message par email — c'est une limite de
+    // Gmail cote reception du destinataire, pas seulement de cette API. On
+    // telecharge donc le message brut (.eml) sur l'appareil a la place, comme
+    // le mode Drive le fait deja pour les fichiers qu'il ne peut pas transferer
+    // par adresse : la suppression cote Gmail peut ensuite se faire normalement.
+    downloadRawEmail(rewritten, subjectHint);
+    return { downloadedInstead: true };
   }
   return gmailSendRawMessage(rewritten);
 }
@@ -562,6 +581,25 @@ function humanSize(n) {
   return `${v.toFixed(1)} To`;
 }
 function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
+// Suspend la suite du traitement tant que l'onglet est en arriere-plan : Safari
+// coupe les requetes reseau en cours quand l'app quitte le premier plan (ecran
+// verrouille, changement d'appli), ce qui provoquait des echecs en cascade sur
+// les gros lots. On evite de lancer un nouvel appel tant que la page n'est pas
+// revenue au premier plan, plutot que de laisser echouer puis reessayer a
+// l'aveugle (un nouvel essai apres un echec ambigu risquerait de renvoyer un
+// email deja parti avec succes cote serveur, donc en double).
+function waitUntilVisible() {
+  if (document.visibilityState !== "hidden") return Promise.resolve();
+  return new Promise((resolve) => {
+    const onChange = () => {
+      if (document.visibilityState === "visible") {
+        document.removeEventListener("visibilitychange", onChange);
+        resolve();
+      }
+    };
+    document.addEventListener("visibilitychange", onChange);
+  });
+}
 function showPanel(id) {
   for (const p of ["configPanel","connectPanel","controlsPanel","loadingPanel","emptyPanel","resultsPanel","processingPanel","donePanel"]) {
     $(p).hidden = p !== id;
@@ -729,6 +767,7 @@ async function onProcess() {
     const proceedLarge = confirm(
       `Lot volumineux : ${humanSize(selectedSize)} au total.\n\n` +
       `${verb} de gros éléments passe par la mémoire du navigateur : sur mobile, ça peut faire manquer de mémoire à Safari et fermer la page en plein traitement.\n\n` +
+      `Important : garde cet onglet ouvert et visible (écran allumé) jusqu'à la fin — en arrière-plan ou écran verrouillé, Safari coupe les requêtes en cours.\n\n` +
       `Conseil : décoche une partie de la sélection et traite par petits groupes.\n\n` +
       `Continuer quand même avec ${humanSize(selectedSize)} ?`
     );
@@ -755,13 +794,22 @@ async function onProcess() {
     return;
   }
 
-  let ok = 0, errors = 0, partial = 0, lastErrorMessage = "";
+  let ok = 0, errors = 0, partial = 0, downloaded = 0, lastErrorMessage = "", wasBackgrounded = false;
   for (let i = 0; i < selected.length; i++) {
+    if (document.visibilityState === "hidden") {
+      wasBackgrounded = true;
+      $("processingProgress").textContent = "En pause — reviens sur l'app pour continuer…";
+      await waitUntilVisible();
+    }
     const m = selected[i];
     $("processingProgress").textContent = `${i + 1} / ${selected.length} — ${m.title.slice(0, 40)}`;
+    let downloadedThisOne = false;
     try {
       if (state.service === "drive") await downloadDriveFile(m);
-      else await forwardMessage(m.id, state.forwardTo);
+      else {
+        const result = await forwardMessage(m.id, state.forwardTo, m.title);
+        downloadedThisOne = !!(result && result.downloadedInstead);
+      }
     } catch (e) {
       errors++;
       lastErrorMessage = e.message || String(e);
@@ -775,6 +823,7 @@ async function onProcess() {
         return state.permanentDelete ? deleteMessagePermanently(m.id) : trashMessage(m.id);
       }, 2, 1200);
       ok++;
+      if (downloadedThisOne) downloaded++;
     } catch (e) {
       partial++; // transfert/telechargement fait, suppression KO -> reapparaitra dans une recherche
     }
@@ -784,6 +833,7 @@ async function onProcess() {
   const unit = state.service === "drive" ? "fichier(s)" : "email(s)";
   $("doneTitle").textContent = (errors === 0 && partial === 0) ? "Terminé" : "Terminé avec erreurs";
   let detail = `${ok} ${unit} traité(s) en entier`;
+  if (downloaded > 0) detail += ` (dont ${downloaded} téléchargé(s) sur l'appareil au lieu d'être transféré(s) par email, trop volumineux pour Gmail)`;
   if (partial > 0) {
     const verbe = state.service === "drive" ? "téléchargé(s)" : "transféré(s)";
     detail += ` — ${partial} ${verbe} mais pas supprimé(s) (erreur sur cette étape) : ils réapparaîtront dans une recherche`;
@@ -791,6 +841,9 @@ async function onProcess() {
   if (errors > 0) detail += ` — ${errors} échec(s) complet(s)`;
   detail += ".";
   if (errors > 0 && lastErrorMessage) detail += ` Détail de la dernière erreur : ${lastErrorMessage}`;
+  if (wasBackgrounded && errors > 0) {
+    detail += ` L'app a été mise en arrière-plan pendant le traitement (écran verrouillé ou changement d'appli) : Safari coupe alors les requêtes en cours, ce qui explique probablement une partie de ces échecs. Relance en gardant l'app ouverte et visible jusqu'à la fin.`;
+  }
   if (!state.permanentDelete && ok > 0) {
     detail += state.service === "drive"
       ? " Les fichiers sont dans la Corbeille Drive : l'espace ne sera libéré qu'après suppression définitive (automatique après 30 jours, ou vidage manuel de la Corbeille dans Drive)."
