@@ -1,0 +1,16 @@
+{
+  "name": "Vider le stockage Google",
+  "short_name": "Vider stockage",
+  "description": "Libère du stockage Gmail et Drive : trouve les plus gros éléments, transfère ou télécharge, puis supprime.",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#F0F2ED",
+  "theme_color": "#F0F2ED",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "maskable" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
