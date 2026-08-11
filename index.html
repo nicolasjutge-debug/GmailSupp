@@ -111,6 +111,7 @@
 
   [hidden]{ display:none !important; }
   a{ color:var(--brand-dark); }
+  .version-tag{ text-align:center; font-family:var(--font-mono); font-size:11px; color:var(--line); margin:24px 0 0; }
 
   /* ===== Adaptation PC / souris : detection reelle par capacite d'entree
      (pointer fin + hover disponible), pas par largeur d'ecran — un
@@ -267,6 +268,8 @@
       <div style="height:8px"></div>
       <button id="restartBtn" class="btn btn-secondary btn-block">Nouvelle recherche</button>
     </section>
+
+    <p class="version-tag">Version 2026-08-10 04:16</p>
   </div>
 
   <div id="actionBar" class="action-bar" hidden>
@@ -286,8 +289,10 @@ const SCOPE_GMAIL_FULL = "https://mail.google.com/";
 const SCOPE_DRIVE = "https://www.googleapis.com/auth/drive";
 const MAX_RESULTS = 50;
 const PROCESS_DELAY_MS = 400;
-const LARGE_BATCH_BYTES = 300 * 1024 * 1024;
-const GMAIL_SEND_MAX_BYTES = 35 * 1024 * 1024; // limite reelle de l'API Gmail (uploadType=media) pour l'envoi
+const LARGE_BATCH_BYTES = 150 * 1024 * 1024;
+const CHUNK_SIZE = 5;
+const CHUNK_PAUSE_MS = 2500;
+const GMAIL_SEND_MAX_BYTES = 25 * 1024 * 1024; // limite d'EMISSION de Gmail lui-meme (tous canaux confondus) ; au-dela, aucune methode ne peut envoyer
 const CLIENT_ID_STORAGE_KEY = "gmailCleanupClientId";
 
 function loadStoredClientId() {
@@ -325,6 +330,12 @@ function base64UrlToBytes(b64url) {
   const bytes = new Uint8Array(binary.length);
   for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
   return bytes;
+}
+function bytesToBase64Url(bytes) {
+  let binary = "";
+  for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+  const b64 = btoa(binary);
+  return b64.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 function findHeaderBoundary(bytes) {
   for (let i = 0; i < bytes.length - 3; i++) {
@@ -449,22 +460,21 @@ async function getMetadata(id) {
   params.append("metadataHeaders", "From");
   return gmailFetch(`/messages/${id}?${params.toString()}`);
 }
-// Envoi via le point d'entree "upload" (uploadType=media), qui accepte le
-// message brut (jusqu'a ~35 Mo) au lieu du point d'entree standard utilise par
-// gmailFetch, limite a 1 Mo pour un corps JSON — largement insuffisant des
-// qu'un email depasse quelques centaines de Ko une fois encode en base64.
+// Envoi via le point d'entree standard (deja confirme fonctionnel, y compris CORS,
+// plus tot dans ce projet). L'ancien point d'entree /upload/.../messages/send utilise
+// ici auparavant provoquait un echec systematique ("Load failed") a chaque envoi,
+// tres probablement un probleme CORS specifique a cet endpoint different — jamais
+// verifie avant d'etre introduit. Le motif initial ("1 Mo max sur le point d'entree
+// standard") reposait sur une confusion avec une limite de longueur de ligne de
+// commande shell (rien a voir avec une limite reseau/API) : aucune limite proche de 1
+// Mo n'existe reellement ici.
 async function gmailSendRawMessage(bytes) {
-  const res = await fetch(`https://gmail.googleapis.com/upload/gmail/v1/users/me/messages/send?uploadType=media`, {
+  const encoded = bytesToBase64Url(bytes);
+  return gmailFetch(`/messages/send`, {
     method: "POST",
-    headers: { Authorization: `Bearer ${state.accessToken}`, "Content-Type": "message/rfc822" },
-    body: bytes,
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ raw: encoded }),
   });
-  if (!res.ok) {
-    let detail = "";
-    try { detail = (await res.json()).error?.message || ""; } catch (_) {}
-    throw new Error(`Gmail API ${res.status}${detail ? " — " + detail : ""}`);
-  }
-  return res.json();
 }
 function downloadRawEmail(bytes, subjectHint) {
   const blob = new Blob([bytes], { type: "message/rfc822" });
@@ -483,12 +493,12 @@ async function forwardMessage(id, forwardTo, subjectHint) {
   const bytes = base64UrlToBytes(raw.raw);
   const rewritten = rewriteRawMessage(bytes, forwardTo);
   if (rewritten.length > GMAIL_SEND_MAX_BYTES) {
-    // Au-dela de ~35 Mo, aucune methode d'envoi Gmail (API ou meme l'appli Gmail
+    // Au-dela de 25 Mo, aucune methode d'envoi Gmail (API ou meme l'appli Gmail
     // elle-meme) ne peut transmettre le message par email — c'est une limite de
-    // Gmail cote reception du destinataire, pas seulement de cette API. On
-    // telecharge donc le message brut (.eml) sur l'appareil a la place, comme
-    // le mode Drive le fait deja pour les fichiers qu'il ne peut pas transferer
-    // par adresse : la suppression cote Gmail peut ensuite se faire normalement.
+    // Gmail cote emission, pas de cette API. On telecharge donc le message brut
+    // (.eml) sur l'appareil a la place, comme le mode Drive le fait deja pour les
+    // fichiers qu'il ne peut pas transferer par adresse : la suppression cote
+    // Gmail peut ensuite se faire normalement.
     downloadRawEmail(rewritten, subjectHint);
     return { downloadedInstead: true };
   }
@@ -756,29 +766,6 @@ async function withRetry(fn, attempts, delayMs) {
   }
   throw lastErr;
 }
-// Une erreur "Gmail API xxx" / "Drive API xxx" vient d'une reponse HTTP recue
-// explicitement : le serveur a repondu, donc on sait avec certitude que rien
-// n'a ete envoye/traite — reessayer est sans risque. Toute autre erreur (ex.
-// "Load failed", "Failed to fetch", coupure reseau) signifie qu'aucune
-// reponse n'est jamais arrivee : impossible de savoir si l'envoi a quand
-// meme abouti cote serveur avant la coupure — reessayer risquerait de creer
-// un doublon. Ce n'est pas forcement lie a une mise en arriere-plan : une
-// simple coupure Wi-Fi/4G en cours de route donne la meme erreur ambigue.
-function isAmbiguousNetworkError(e) {
-  const msg = (e && e.message) || String(e);
-  return !(msg.startsWith("Gmail API ") || msg.startsWith("Drive API "));
-}
-async function withRetrySafe(fn, attempts, delayMs) {
-  let lastErr;
-  for (let i = 0; i < attempts; i++) {
-    try { return await fn(); } catch (e) {
-      lastErr = e;
-      if (isAmbiguousNetworkError(e)) throw e; // pas sûr que rien n'a ete fait : on n'insiste pas
-      if (i < attempts - 1) await sleep(delayMs);
-    }
-  }
-  throw lastErr;
-}
 
 async function onProcess() {
   const selected = state.messages.filter((m) => m.selected);
@@ -817,7 +804,7 @@ async function onProcess() {
     return;
   }
 
-  let ok = 0, errors = 0, partial = 0, downloaded = 0, lastErrorMessage = "", wasBackgrounded = false;
+  let ok = 0, errors = 0, partial = 0, downloaded = 0, sentCopyLeftBehind = 0, lastErrorMessage = "", wasBackgrounded = false;
   for (let i = 0; i < selected.length; i++) {
     if (document.visibilityState === "hidden") {
       wasBackgrounded = true;
@@ -827,11 +814,13 @@ async function onProcess() {
     const m = selected[i];
     $("processingProgress").textContent = `${i + 1} / ${selected.length} — ${m.title.slice(0, 40)}`;
     let downloadedThisOne = false;
+    let sentCopyId = null;
     try {
-      if (state.service === "drive") await withRetry(() => downloadDriveFile(m), 2, 1200);
+      if (state.service === "drive") await downloadDriveFile(m);
       else {
-        const result = await withRetrySafe(() => forwardMessage(m.id, state.forwardTo, m.title), 2, 1200);
+        const result = await forwardMessage(m.id, state.forwardTo, m.title);
         downloadedThisOne = !!(result && result.downloadedInstead);
+        if (result && result.id) sentCopyId = result.id; // copie creee par Gmail dans "Envois", a nettoyer aussi
       }
     } catch (e) {
       errors++;
@@ -847,10 +836,27 @@ async function onProcess() {
       }, 2, 1200);
       ok++;
       if (downloadedThisOne) downloaded++;
+      if (sentCopyId) {
+        // Gmail enregistre systematiquement une copie du message envoye dans "Envois",
+        // meme via l'API — sans ce nettoyage, chaque transfert reussi agrandirait la
+        // boite au lieu de la vider. Echec ici = mineur (l'original est deja traite),
+        // compte separement plutot que comme un echec du transfert lui-meme.
+        try {
+          await withRetry(() => (state.permanentDelete ? deleteMessagePermanently(sentCopyId) : trashMessage(sentCopyId)), 2, 1200);
+        } catch (e) {
+          sentCopyLeftBehind++;
+        }
+      }
     } catch (e) {
       partial++; // transfert/telechargement fait, suppression KO -> reapparaitra dans une recherche
     }
-    await sleep(PROCESS_DELAY_MS);
+    const isLastOfChunk = (i + 1) % CHUNK_SIZE === 0;
+    if (isLastOfChunk && i + 1 < selected.length) {
+      $("processingProgress").textContent = `Pause mémoire… (${i + 1}/${selected.length} traités)`;
+      await sleep(CHUNK_PAUSE_MS);
+    } else {
+      await sleep(PROCESS_DELAY_MS);
+    }
   }
 
   const unit = state.service === "drive" ? "fichier(s)" : "email(s)";
@@ -862,12 +868,13 @@ async function onProcess() {
     detail += ` — ${partial} ${verbe} mais pas supprimé(s) (erreur sur cette étape) : ils réapparaîtront dans une recherche`;
   }
   if (errors > 0) detail += ` — ${errors} échec(s) complet(s)`;
+  if (sentCopyLeftBehind > 0) {
+    detail += ` — ${sentCopyLeftBehind} copie(s) laissée(s) dans "Envois" (suppression de la copie échouée, l'original est bien traité) : à supprimer manuellement si besoin`;
+  }
   detail += ".";
   if (errors > 0 && lastErrorMessage) detail += ` Détail de la dernière erreur : ${lastErrorMessage}`;
-  if (errors > 0) {
-    detail += wasBackgrounded
-      ? ` L'app a été mise en arrière-plan pendant le traitement (écran verrouillé ou changement d'appli) : Safari coupe alors les requêtes en cours, ce qui explique probablement une partie de ces échecs. Relance en gardant l'app ouverte et visible jusqu'à la fin.`
-      : ` Ces échecs n'ont pas de cause identifiée côté app (pas de mise en arrière-plan détectée) : la piste la plus probable est une coupure réseau ponctuelle (Wi-Fi/4G) pendant l'envoi — le Wi-Fi est plus stable que la 4G pour un gros lot. Les éléments concernés réapparaîtront dans une recherche : aucune perte, mais vérifie ta boîte d'archive au cas où un envoi aurait malgré tout abouti juste avant la coupure.`;
+  if (wasBackgrounded && errors > 0) {
+    detail += ` L'app a été mise en arrière-plan pendant le traitement (écran verrouillé ou changement d'appli) : Safari coupe alors les requêtes en cours, ce qui explique probablement une partie de ces échecs. Relance en gardant l'app ouverte et visible jusqu'à la fin.`;
   }
   if (!state.permanentDelete && ok > 0) {
     detail += state.service === "drive"
